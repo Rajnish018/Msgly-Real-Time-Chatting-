@@ -10,7 +10,7 @@ export const getUsersForSidebar = async (req, res) => {
   try {
     const myId = req.user._id;
 
-    // 1️⃣ Find all users I've chatted with
+    // 1️ Find all users I've chatted with
     const sentTo = await Message.distinct("receiverId", {
       senderId: myId,
     });

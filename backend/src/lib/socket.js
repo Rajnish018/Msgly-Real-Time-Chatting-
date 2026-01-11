@@ -5,11 +5,20 @@ import express from "express";
 const app = express();
 const server = http.createServer(app);
 
+/* ======================
+   CORS (SAFE FOR PROD)
+====================== */
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  "http://localhost:5173",
+].filter(Boolean);
+
 const io = new Server(server, {
   cors: {
-    origin: [ process.env.CLIENT_URL,"http://localhost:5173"],
+    origin: allowedOrigins,
     credentials: true,
   },
+  transports: ["websocket"], // 🔥 better stability on Render
 });
 
 /* =========================================================
@@ -29,20 +38,18 @@ export const getReceiverSocketId = (userId) => {
    SOCKET CONNECTION
 ========================================================= */
 io.on("connection", (socket) => {
-  const userId = socket.handshake.query.userId;
+  const { userId } = socket.handshake.query;
 
   if (!userId) {
-    socket.disconnect();
+    console.warn("❌ Socket rejected: missing userId");
+    socket.disconnect(true);
     return;
   }
 
-  // 🔑 attach userId to socket
   socket.userId = userId;
-
-  // store online user
   userSocketMap.set(userId, socket.id);
 
-  console.log("User connected:", userId);
+  console.log(" User connected:", userId);
 
   /* ---------- broadcast online users ---------- */
   io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
@@ -52,8 +59,6 @@ io.on("connection", (socket) => {
   ========================================================= */
   socket.on("typing", ({ to }) => {
     const receiverSocketId = getReceiverSocketId(to);
-    // console.log("➡️ forwarding typing to socket:", receiverSocketId);
-
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("typing", {
         from: socket.userId,
@@ -70,23 +75,15 @@ io.on("connection", (socket) => {
     }
   });
 
-//   socket.on("typing", ({ to }) => {
-//   console.log("📨 typing received from", socket.userId, "to", to);
-// });
-
-
   /* =========================================================
      DISCONNECT
   ========================================================= */
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.userId);
+  socket.on("disconnect", (reason) => {
+    console.log(" User disconnected:", socket.userId, "|", reason);
 
     userSocketMap.delete(socket.userId);
-
     io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
   });
-
-
 });
 
 /* =========================================================
