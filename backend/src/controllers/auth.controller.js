@@ -39,7 +39,7 @@ export const signup = async (req, res) => {
     });
 
     /* ---------- issue JWT ---------- */
-    generateToken(user._id, res);
+   const token= generateToken(user._id, res);
 
     /* ---------- response ---------- */
     return res.status(201).json({
@@ -47,6 +47,7 @@ export const signup = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       profilePic: user.profilePic,
+      token,
     });
   } catch (error) {
     console.error("Signup error:", error);
@@ -79,7 +80,7 @@ export const login = async (req, res) => {
     }
 
     /* ---------- issue JWT ---------- */
-    generateToken(user._id, res);
+  const token=  generateToken(user._id, res);
 
     /* ---------- response ---------- */
     return res.status(200).json({
@@ -87,6 +88,7 @@ export const login = async (req, res) => {
       fullName: user.fullName,
       email: user.email,
       profilePic: user.profilePic,
+      token,
     });
   } catch (error) {
     console.error("Login error:", error);

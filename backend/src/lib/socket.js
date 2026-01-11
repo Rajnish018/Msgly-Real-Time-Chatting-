@@ -1,12 +1,13 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
+import jwt from "jsonwebtoken";
 
 const app = express();
 const server = http.createServer(app);
 
 /* ======================
-   CORS (SAFE FOR PROD)
+   SOCKET.IO SETUP
 ====================== */
 const allowedOrigins = [
   process.env.CLIENT_URL,
@@ -18,13 +19,34 @@ const io = new Server(server, {
     origin: allowedOrigins,
     credentials: true,
   },
-  transports: ["websocket"], // 🔥 better stability on Render
+  transports: ["websocket"], // stable on mobile browsers
+});
+
+/* =========================================================
+   SOCKET AUTH (JWT) 🔐
+========================================================= */
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+
+  if (!token) {
+    console.warn("❌ Socket rejected: missing token");
+    return next(new Error("Unauthorized"));
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId;
+    next();
+  } catch (error) {
+    console.warn("❌ Socket rejected: invalid token");
+    next(new Error("Unauthorized"));
+  }
 });
 
 /* =========================================================
    ONLINE USERS MAP
 ========================================================= */
-// { userId: socketId }
+// userId -> socketId
 const userSocketMap = new Map();
 
 /* =========================================================
@@ -38,18 +60,10 @@ export const getReceiverSocketId = (userId) => {
    SOCKET CONNECTION
 ========================================================= */
 io.on("connection", (socket) => {
-  const { userId } = socket.handshake.query;
+  const userId = socket.userId;
 
-  if (!userId) {
-    console.warn("❌ Socket rejected: missing userId");
-    socket.disconnect(true);
-    return;
-  }
-
-  socket.userId = userId;
   userSocketMap.set(userId, socket.id);
-
-  console.log(" User connected:", userId);
+  console.log("🟢 User connected:", userId);
 
   /* ---------- broadcast online users ---------- */
   io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
@@ -61,7 +75,7 @@ io.on("connection", (socket) => {
     const receiverSocketId = getReceiverSocketId(to);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("typing", {
-        from: socket.userId,
+        from: userId,
       });
     }
   });
@@ -70,7 +84,7 @@ io.on("connection", (socket) => {
     const receiverSocketId = getReceiverSocketId(to);
     if (receiverSocketId) {
       io.to(receiverSocketId).emit("stopTyping", {
-        from: socket.userId,
+        from: userId,
       });
     }
   });
@@ -79,9 +93,8 @@ io.on("connection", (socket) => {
      DISCONNECT
   ========================================================= */
   socket.on("disconnect", (reason) => {
-    console.log(" User disconnected:", socket.userId, "|", reason);
-
-    userSocketMap.delete(socket.userId);
+    console.log("🔴 User disconnected:", userId, "|", reason);
+    userSocketMap.delete(userId);
     io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
   });
 });

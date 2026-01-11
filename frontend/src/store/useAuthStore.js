@@ -7,6 +7,7 @@ const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 
 export const useAuthStore = create((set, get) => ({
   authUser: null,
+  token: null,                 
   isSigningUp: false,
   isLoggingIn: false,
   isUpdatingProfile: false,
@@ -21,9 +22,8 @@ export const useAuthStore = create((set, get) => ({
     try {
       const res = await axiosInstance.get("/auth/check");
       set({ authUser: res.data });
-      get().connectSocket();
-    } catch (error) {
-      set({ authUser: null });
+    } catch {
+      set({ authUser: null, token: null });
       get().disconnectSocket();
     } finally {
       set({ isCheckingAuth: false });
@@ -37,7 +37,12 @@ export const useAuthStore = create((set, get) => ({
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
-      set({ authUser: res.data });
+
+      set({
+        authUser: res.data,
+        token: res.data.token, 
+      });
+
       toast.success("Account created successfully");
       get().connectSocket();
     } catch (error) {
@@ -54,7 +59,12 @@ export const useAuthStore = create((set, get) => ({
     set({ isLoggingIn: true });
     try {
       const res = await axiosInstance.post("/auth/login", data);
-      set({ authUser: res.data });
+
+      set({
+        authUser: res.data,
+        token: res.data.token,
+      });
+
       toast.success("Logged in successfully");
       get().connectSocket();
     } catch (error) {
@@ -65,25 +75,24 @@ export const useAuthStore = create((set, get) => ({
   },
 
   /* ======================
-     LOGOUT (CRITICAL FIX)
+     LOGOUT
   ====================== */
   logout: async () => {
     try {
       await axiosInstance.post("/auth/logout");
-    } catch (error) {
-      console.error("Logout error:", error);
-    } finally {
-      get().disconnectSocket();
+    } catch {}
 
-      set({
-        authUser: null,
-        onlineUsers: [],
-        socket: null,
-        isCheckingAuth: false,
-      });
+    get().disconnectSocket();
 
-      toast.success("Logged out successfully");
-    }
+    set({
+      authUser: null,
+      token: null,
+      onlineUsers: [],
+      socket: null,
+      isCheckingAuth: false,
+    });
+
+    toast.success("Logged out successfully");
   },
 
   /* ======================
@@ -103,16 +112,15 @@ export const useAuthStore = create((set, get) => ({
   },
 
   /* ======================
-     SOCKET LOGIC
+     SOCKET LOGIC (JWT AUTH)
   ====================== */
   connectSocket: () => {
-    const { authUser, socket } = get();
-    if (!authUser || socket?.connected) return;
+    const { authUser, token, socket } = get();
+    if (!authUser || !token || socket?.connected) return;
 
     const newSocket = io(SOCKET_URL, {
-      query: { userId: authUser._id },
-      withCredentials: true,
-      transports: ["websocket"],
+      auth: { token },              
+      transports: ["websocket"],   
     });
 
     newSocket.on("getOnlineUsers", (userIds) => {
@@ -124,8 +132,6 @@ export const useAuthStore = create((set, get) => ({
 
   disconnectSocket: () => {
     const socket = get().socket;
-    if (socket) {
-      socket.disconnect();
-    }
+    if (socket) socket.disconnect();
   },
 }));
