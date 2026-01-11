@@ -1,30 +1,49 @@
 import { X } from "lucide-react";
-import { useAuthStore } from "../../store/useAuthStore";
 import { useChatStore } from "../../store/useChatStore";
 
+/* =========================================================
+   LAST SEEN FORMATTER
+========================================================= */
+const formatLastSeen = (timestamp) => {
+  if (!timestamp) return "last seen recently";
+
+  const date = new Date(timestamp);
+  return `last seen at ${date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+};
+
 const ChatHeader = () => {
-  const { selectedUser, setSelectedUser, typingUser } = useChatStore();
-  const { onlineUsers } = useAuthStore();
+  const {
+    selectedUser,
+    setSelectedUser,
+    typingUsers,
+    onlineUsers,
+    lastSeenMap,
+  } = useChatStore();
 
   if (!selectedUser) return null;
 
-  const isOnline = onlineUsers.includes(String(selectedUser._id));
+  // 🔥 ALWAYS normalize ID to string
+  const userId = String(selectedUser._id);
 
-//   console.log("🧠 ChatHeader render", {
-//   typingUser,
-//   selectedUser: selectedUser?._id,
-// });
-
-
-  // 🔥 FIX: string comparison
-  const isTyping =
-    String(typingUser) === String(selectedUser._id);
+  const isTyping = !!typingUsers?.[userId];
+  const isOnline = !!onlineUsers?.[userId];
+  const lastSeen = lastSeenMap?.[userId];
 
   const statusText = isTyping
     ? "typing…"
     : isOnline
     ? "online"
-    : "last seen recently";
+    : formatLastSeen(lastSeen);
+
+  // ✅ DEBUG (safe to remove later)
+  console.log("🟢 presence", {
+    selectedUser: userId,
+    onlineUsers,
+    lastSeenMap,
+  });
 
   return (
     <div className="p-2.5 border-b border-base-300 bg-base-100">
@@ -38,20 +57,21 @@ const ChatHeader = () => {
                 src={selectedUser.profilePic || "/avatar.png"}
                 alt={selectedUser.fullName}
               />
+
               {isOnline && (
                 <span className="absolute bottom-0 right-0 size-2.5 bg-green-500 rounded-full ring-2 ring-base-100" />
               )}
             </div>
           </div>
 
-          {/* User info */}
+          {/* User Info */}
           <div className="leading-tight">
             <h3 className="font-medium truncate max-w-[180px]">
               {selectedUser.fullName}
             </h3>
 
             <p
-              className={`text-xs ${
+              className={`text-xs transition-colors ${
                 isTyping ? "text-primary" : "text-base-content/60"
               }`}
             >
@@ -60,7 +80,7 @@ const ChatHeader = () => {
           </div>
         </div>
 
-        {/* Close */}
+        {/* CLOSE BUTTON */}
         <button
           onClick={() => setSelectedUser(null)}
           className="p-2 rounded-full hover:bg-base-200"

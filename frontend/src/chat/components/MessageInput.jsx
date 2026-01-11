@@ -4,9 +4,11 @@ import EmojiPicker from "emoji-picker-react";
 import toast from "react-hot-toast";
 
 import { useChatStore } from "../../store/useChatStore";
+import { useAuthStore } from "../../store/useAuthStore";
 
 const MAX_ROWS = 5;
 const CANCEL_DISTANCE = 80;
+const TYPING_IDLE = 1200;
 
 const MessageInput = () => {
   const [text, setText] = useState("");
@@ -27,9 +29,41 @@ const MessageInput = () => {
   const animationRef = useRef(null);
   const touchStartX = useRef(0);
 
-  const { sendMessage } = useChatStore();
+  /* ================= TYPING ================= */
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
 
-  /* ================= AUTO EXPAND ================= */
+  const { socket } = useAuthStore();
+  const { sendMessage, selectedUser } = useChatStore();
+
+  const emitTyping = () => {
+    if (!socket || !selectedUser) return;
+
+    if (!isTypingRef.current) {
+      socket.emit("typing", { to: selectedUser._id });
+      isTypingRef.current = true;
+    }
+
+    clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stopTyping", { to: selectedUser._id });
+      isTypingRef.current = false;
+    }, TYPING_IDLE);
+  };
+
+  const stopTyping = () => {
+    if (!socket || !isTypingRef.current || !selectedUser) return;
+
+    socket.emit("stopTyping", { to: selectedUser._id });
+    isTypingRef.current = false;
+    clearTimeout(typingTimeoutRef.current);
+  };
+
+  useEffect(() => {
+    return () => stopTyping(); // cleanup on unmount / reload
+  }, []);
+
+  /* ================= AUTO RESIZE ================= */
   const resizeTextarea = () => {
     const el = textareaRef.current;
     if (!el) return;
@@ -44,6 +78,7 @@ const MessageInput = () => {
 
     const reader = new FileReader();
     reader.onloadend = async () => {
+      stopTyping();
       await sendMessage({ image: reader.result });
     };
     reader.readAsDataURL(file);
@@ -241,7 +276,9 @@ const MessageInput = () => {
           onChange={(e) => {
             setText(e.target.value);
             resizeTextarea();
+            emitTyping();
           }}
+          onBlur={stopTyping}
           placeholder="Message…"
           className="flex-1 resize-none input input-bordered rounded-2xl"
         />
@@ -260,6 +297,7 @@ const MessageInput = () => {
         <button
           onClick={() => {
             if (!text.trim()) return;
+            stopTyping();
             sendMessage({ text });
             setText("");
             textareaRef.current.style.height = "auto";

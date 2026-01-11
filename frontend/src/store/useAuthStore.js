@@ -6,24 +6,31 @@ import { io } from "socket.io-client";
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL;
 
 export const useAuthStore = create((set, get) => ({
+  /* ======================
+     STATE
+  ====================== */
   authUser: null,
-  token: null,                 
   isSigningUp: false,
   isLoggingIn: false,
   isUpdatingProfile: false,
   isCheckingAuth: true,
-  onlineUsers: [],
+
+  onlineUsers: {}, // 🔥 { [userId]: true }
+
   socket: null,
+  socketConnecting: false,
+  isSocketConnected: false,
 
   /* ======================
-     CHECK AUTH (ON LOAD)
+     CHECK AUTH
   ====================== */
   checkAuth: async () => {
     try {
       const res = await axiosInstance.get("/auth/check");
       set({ authUser: res.data });
+      get().connectSocket();
     } catch {
-      set({ authUser: null, token: null });
+      set({ authUser: null });
       get().disconnectSocket();
     } finally {
       set({ isCheckingAuth: false });
@@ -31,44 +38,31 @@ export const useAuthStore = create((set, get) => ({
   },
 
   /* ======================
-     SIGNUP
+     SIGNUP / LOGIN
   ====================== */
   signup: async (data) => {
     set({ isSigningUp: true });
     try {
       const res = await axiosInstance.post("/auth/signup", data);
-
-      set({
-        authUser: res.data,
-        token: res.data.token, 
-      });
-
-      toast.success("Account created successfully");
+      set({ authUser: res.data });
+      toast.success("Account created");
       get().connectSocket();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Signup failed");
+    } catch (e) {
+      toast.error(e.response?.data?.message || "Signup failed");
     } finally {
       set({ isSigningUp: false });
     }
   },
 
-  /* ======================
-     LOGIN
-  ====================== */
   login: async (data) => {
     set({ isLoggingIn: true });
     try {
       const res = await axiosInstance.post("/auth/login", data);
-
-      set({
-        authUser: res.data,
-        token: res.data.token,
-      });
-
-      toast.success("Logged in successfully");
+      set({ authUser: res.data });
+      toast.success("Logged in");
       get().connectSocket();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Login failed");
+    } catch (e) {
+      toast.error(e.response?.data?.message || "Login failed");
     } finally {
       set({ isLoggingIn: false });
     }
@@ -86,52 +80,93 @@ export const useAuthStore = create((set, get) => ({
 
     set({
       authUser: null,
-      token: null,
-      onlineUsers: [],
+      onlineUsers: {},
       socket: null,
-      isCheckingAuth: false,
+      isSocketConnected: false,
     });
 
-    toast.success("Logged out successfully");
+    toast.success("Logged out");
   },
 
   /* ======================
-     UPDATE PROFILE
-  ====================== */
-  updateProfile: async (data) => {
-    set({ isUpdatingProfile: true });
-    try {
-      const res = await axiosInstance.put("/auth/update-profile", data);
-      set({ authUser: res.data });
-      toast.success("Profile updated successfully");
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Update failed");
-    } finally {
-      set({ isUpdatingProfile: false });
-    }
-  },
-
-  /* ======================
-     SOCKET LOGIC (JWT AUTH)
+     SOCKET CONNECT (FINAL)
   ====================== */
   connectSocket: () => {
-    const { authUser, token, socket } = get();
-    if (!authUser || !token || socket?.connected) return;
+    const { authUser, socketConnecting, isSocketConnected } = get();
+    if (!authUser || socketConnecting || isSocketConnected) return;
 
-    const newSocket = io(SOCKET_URL, {
-      auth: { token },              
-      transports: ["websocket"],   
+    set({ socketConnecting: true });
+
+    const socket = io(SOCKET_URL, {
+      withCredentials: true,
+      transports: ["websocket"],
     });
 
-    newSocket.on("getOnlineUsers", (userIds) => {
-      set({ onlineUsers: userIds });
+    socket.on("connect", () => {
+      console.log("🟢 SOCKET CONNECTED:", socket.id);
+
+      set({
+        socket,
+        isSocketConnected: true,
+        socketConnecting: false,
+      });
     });
 
-    set({ socket: newSocket });
+    /* 🔥 FULL SNAPSHOT (CRITICAL FIX) */
+    socket.on("onlineUsers", (users) => {
+      const map = {};
+      users.forEach((id) => {
+        map[String(id)] = true;
+      });
+
+      console.log("📡 ONLINE SNAPSHOT:", map);
+      set({ onlineUsers: map });
+    });
+
+    /* 🔥 REALTIME PRESENCE */
+    socket.on("userStatus", ({ userId, status }) => {
+      set((state) => {
+        const online = { ...state.onlineUsers };
+
+        if (status === "online") {
+          online[String(userId)] = true;
+        } else {
+          delete online[String(userId)];
+        }
+
+        return { onlineUsers: online };
+      });
+    });
+
+    socket.on("disconnect", () => {
+      console.log("🔴 SOCKET DISCONNECTED");
+      set({
+        socket: null,
+        isSocketConnected: false,
+      });
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("❌ SOCKET ERROR:", err.message);
+      set({ socketConnecting: false });
+    });
   },
 
+  /* ======================
+     SOCKET DISCONNECT
+  ====================== */
   disconnectSocket: () => {
     const socket = get().socket;
-    if (socket) socket.disconnect();
+    if (socket) {
+      socket.off();
+      socket.disconnect();
+    }
+
+    set({
+      socket: null,
+      onlineUsers: {},
+      isSocketConnected: false,
+      socketConnecting: false,
+    });
   },
 }));

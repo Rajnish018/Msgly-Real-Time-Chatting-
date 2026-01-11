@@ -11,7 +11,9 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   selectedUser: null,
 
-  typingUser: null, // ✅ REQUIRED
+  typingUsers: {},          // { [userId]: true }
+  onlineUsers: {},          // { [userId]: true }
+  lastSeenMap: {},          // { [userId]: timestamp }
 
   isUsersLoading: false,
   isMessagesLoading: false,
@@ -28,7 +30,7 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/users");
       set({ users: res.data, hasFetchedUsers: true });
     } catch (e) {
-      console.log("Error",e)
+      console.error("getUsers error:", e);
       toast.error("Failed to load chats");
       set({ hasFetchedUsers: true });
     } finally {
@@ -53,25 +55,80 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (data) => {
-    const { selectedUser } = get();
-    if (!selectedUser) return;
+ sendMessage: async (data) => {
+  const { selectedUser, messages } = get();
+  const authUser = useAuthStore.getState().authUser;
 
-    try {
-      const res = await axiosInstance.post(
-        `/messages/send/${selectedUser._id}`,
-        data
-      );
+  if (!selectedUser || !authUser) return;
 
-      set((state) => ({
-        messages: [...state.messages, res.data],
-      }));
+  // ===============================
+  // 1️⃣ OPTIMISTIC MESSAGE
+  // ===============================
+  const optimisticMsg = {
+    _id: "temp-" + Date.now(),
+    senderId: authUser._id,
+    receiverId: selectedUser._id,
+    text: data.text || null,
+    image: data.image || null,
+    audio: data.audio || null,
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    sending: true, // 👈 for UI
+  };
 
-      get().getUsers(true);
-    } catch {
-      toast.error("Failed to send message");
-    }
-  },
+  // 🔥 INSTANT UI UPDATE (NO RELOAD)
+  set({
+    messages: [...messages, optimisticMsg],
+  });
+
+  try {
+    // ===============================
+    // 2️⃣ SEND TO BACKEND
+    // ===============================
+    await axiosInstance.post(
+      `/messages/send/${selectedUser._id}`,
+      data
+    );
+  } catch (error) {
+    toast.error("Failed to send message");
+
+    // ===============================
+    // 3️⃣ ROLLBACK ON FAILURE
+    // ===============================
+    set({
+      messages: get().messages.filter(
+        (m) => m._id !== optimisticMsg._id
+      ),
+    });
+  }
+},
+
+editMessage: async (messageId, text) => {
+  try {
+    await axiosInstance.patch(`/messages/${messageId}`, { text });
+
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m._id === messageId ? { ...m, text, edited: true } : m
+      ),
+    }));
+  } catch {
+    toast.error("Edit failed");
+  }
+},
+
+deleteMessage: async (messageId) => {
+  try {
+    await axiosInstance.delete(`/messages/${messageId}`);
+
+    set((state) => ({
+      messages: state.messages.filter((m) => m._id !== messageId),
+    }));
+  } catch {
+    toast.error("Delete failed");
+  }
+},
+
 
   /* =========================================================
      SOCKET — MESSAGES
@@ -83,64 +140,123 @@ export const useChatStore = create((set, get) => ({
     socket.off("newMessage");
 
     socket.on("newMessage", (msg) => {
-      const { selectedUser } = get();
+      const { selectedUser, messages } = get();
 
-      if (
+      const isCurrentChat =
         selectedUser &&
-        (msg.senderId === selectedUser._id ||
-          msg.receiverId === selectedUser._id)
-      ) {
-        set((state) => ({
-          messages: [...state.messages, msg],
-        }));
-      }
+        (String(msg.senderId) === String(selectedUser._id) ||
+         String(msg.receiverId) === String(selectedUser._id));
 
-      get().getUsers(true);
+      // get().getUsers(true);
+
+      if (!isCurrentChat) return;
+      if (messages.some((m) => m._id === msg._id)) return;
+
+      set({ messages: [...messages, msg] });
     });
   },
 
   unsubscribeFromMessages: () => {
-    const socket = useAuthStore.getState().socket;
-    socket?.off("newMessage");
+    useAuthStore.getState().socket?.off("newMessage");
   },
 
   /* =========================================================
-     SOCKET — TYPING (🔥 FIX)
+     SOCKET — TYPING
   ========================================================= */
   subscribeToTyping: () => {
-  const socket = useAuthStore.getState().socket;
-  if (!socket) return;
-
-  socket.off("typing");
-  socket.off("stopTyping");
-
-  socket.on("typing", ({ from }) => {
-    const { selectedUser } = get();
-
-    // ✅ show typing only for active chat
-    if (String(from) === String(selectedUser?._id)) {
-      console.log("👀 typing from", from);
-      set({ typingUser: from });
-    }
-  });
-
-  socket.on("stopTyping", ({ from }) => {
-    const { selectedUser } = get();
-
-    // ✅ clear only if same chat
-    if (String(from) === String(selectedUser?._id)) {
-      set({ typingUser: null });
-    }
-  });
-},
-
-
-  unsubscribeFromTyping: () => {
     const socket = useAuthStore.getState().socket;
     if (!socket) return;
 
     socket.off("typing");
     socket.off("stopTyping");
+
+    socket.on("typing", ({ from }) => {
+      const { selectedUser } = get();
+      if (String(from) !== String(selectedUser?._id)) return;
+
+      set((state) => ({
+        typingUsers: {
+          ...state.typingUsers,
+          [from]: true,
+        },
+      }));
+    });
+
+    socket.on("stopTyping", ({ from }) => {
+      set((state) => {
+        const updated = { ...state.typingUsers };
+        delete updated[from];
+        return { typingUsers: updated };
+      });
+    });
+  },
+
+  unsubscribeFromTyping: () => {
+    const socket = useAuthStore.getState().socket;
+    socket?.off("typing");
+    socket?.off("stopTyping");
+  },
+
+ /* =========================================================
+   SOCKET — USER STATUS (ONLINE / LAST SEEN) ✅ FIXED
+========================================================= */
+subscribeToUserStatus: () => {
+  const socket = useAuthStore.getState().socket;
+  if (!socket) return;
+
+  console.log("🟡 subscribeToUserStatus CALLED:", socket.id);
+
+  // cleanup old listeners
+  socket.off("onlineUsers");
+  socket.off("userStatus");
+
+  /* =====================================================
+     1️⃣ SNAPSHOT — FULL ONLINE USERS LIST (CRITICAL)
+  ===================================================== */
+  socket.on("onlineUsers", (userIds) => {
+    console.log("🟢 onlineUsers snapshot:", userIds);
+
+    const onlineMap = {};
+    userIds.forEach((id) => {
+      onlineMap[String(id)] = true;
+    });
+
+    set({ onlineUsers: onlineMap });
+  });
+
+  /* =====================================================
+     2️⃣ INCREMENTAL UPDATES
+  ===================================================== */
+  socket.on("userStatus", ({ userId, status, lastSeen }) => {
+    console.log("🟣 userStatus received:", { userId, status, lastSeen });
+
+    if (status === "online") {
+      set((state) => ({
+        onlineUsers: {
+          ...state.onlineUsers,
+          [String(userId)]: true,
+        },
+      }));
+    } else {
+      set((state) => {
+        const online = { ...state.onlineUsers };
+        delete online[String(userId)];
+
+        return {
+          onlineUsers: online,
+          lastSeenMap: {
+            ...state.lastSeenMap,
+            [String(userId)]: lastSeen,
+          },
+        };
+      });
+    }
+  });
+},
+
+
+  unsubscribeFromUserStatus: () => {
+    useAuthStore.getState().socket?.off("userStatus");
   },
 
   /* =========================================================
@@ -150,7 +266,7 @@ export const useChatStore = create((set, get) => ({
     set({
       selectedUser: user,
       messages: [],
-      typingUser: null, // ✅ reset
+      typingUsers: {},
       isMessagesLoading: true,
     });
 
@@ -167,7 +283,9 @@ export const useChatStore = create((set, get) => ({
       users: [],
       messages: [],
       selectedUser: null,
-      typingUser: null,
+      typingUsers: {},
+      onlineUsers: {},
+      lastSeenMap: {},
       hasFetchedUsers: false,
     }),
 }));

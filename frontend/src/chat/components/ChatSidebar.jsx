@@ -13,26 +13,15 @@ const ChatSidebar = () => {
     selectedUser,
     setSelectedUser,
     isUsersLoading,
+    onlineUsers, // ✅ CORRECT SOURCE
   } = useChatStore();
 
-  const { onlineUsers, logout } = useAuthStore();
+  const { logout } = useAuthStore();
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [view, setView] = useState("chats"); // chats | new-chat
-
-  /* ---------------- Actions ---------------- */
-  const markAllAsRead = () => {
-    // UI-only; real impl should hit API
-    users.forEach((u) => (u.unreadCount = 0));
-    setMenuOpen(false);
-  };
-
-  const selectAllChats = () => {
-    if (users.length) setSelectedUser(users[0]);
-    setMenuOpen(false);
-  };
+  const [view, setView] = useState("chats");
 
   /* ---------------- Filtered Users ---------------- */
   const filteredUsers = useMemo(() => {
@@ -42,10 +31,7 @@ const ChatSidebar = () => {
       const q = search.toLowerCase();
       list = list.filter((u) => {
         const nameMatch = u.fullName?.toLowerCase().includes(q);
-
-        const lastMessageText =
-          u.lastMessage?.text?.toLowerCase() || "";
-
+        const lastMessageText = u.lastMessage?.text?.toLowerCase() || "";
         return nameMatch || lastMessageText.includes(q);
       });
     }
@@ -60,16 +46,15 @@ const ChatSidebar = () => {
   if (isUsersLoading) return <SidebarSkeleton />;
 
   return (
-<div className="h-full w-full bg-base-100 overflow-hidden">
+    <div className="h-full w-full bg-base-100 overflow-hidden">
       <AnimatePresence mode="wait">
         {view === "chats" ? (
           <motion.div
             key="chats"
+            className="h-full flex flex-col"
             initial={{ x: 0, opacity: 1 }}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -40, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="h-full flex flex-col"
           >
             {/* Header */}
             <div className="p-4 border-b border-base-300">
@@ -94,10 +79,6 @@ const ChatSidebar = () => {
                   <ChatMenuDropdown
                     open={menuOpen}
                     onClose={() => setMenuOpen(false)}
-                    onNewGroup={() => setMenuOpen(false)}
-                    onStarAll={() => setMenuOpen(false)}
-                    onSelectAll={selectAllChats}
-                    onMarkAllRead={markAllAsRead}
                     onLogout={logout}
                   />
                 </div>
@@ -113,23 +94,6 @@ const ChatSidebar = () => {
                   className="w-full pl-10 pr-4 py-2.5 bg-base-200 rounded-full outline-none"
                 />
               </div>
-
-              {/* Filters */}
-              <div className="flex gap-2 overflow-x-auto no-scrollbar">
-                {["all", "unread", "groups", "favourites"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`px-3 py-1.5 rounded-full text-sm whitespace-nowrap transition ${
-                      filter === f
-                        ? "bg-primary text-black"
-                        : "bg-base-200 hover:bg-base-300"
-                    }`}
-                  >
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Chat List */}
@@ -138,24 +102,15 @@ const ChatSidebar = () => {
                 <EmptyState />
               ) : (
                 filteredUsers.map((user) => {
-                  const isOnline = onlineUsers.includes(user._id);
+                  const isOnline = !!onlineUsers[user._id]; // ✅ FIX
                   const isActive = selectedUser?._id === user._id;
-
-                  const lastMessageText =
-                    user.lastMessage?.text
-                      ? user.lastMessage.text
-                      : user.lastMessage?.image
-                      ? "📷 Photo"
-                      : "";
 
                   return (
                     <button
                       key={user._id}
                       onClick={() => setSelectedUser(user)}
                       className={`w-full px-4 py-3 flex gap-3 items-center transition ${
-                        isActive
-                          ? "bg-base-300"
-                          : "hover:bg-base-200"
+                        isActive ? "bg-base-300" : "hover:bg-base-200"
                       }`}
                     >
                       <div className="relative">
@@ -173,10 +128,8 @@ const ChatSidebar = () => {
                         <p className="font-medium truncate">
                           {user.fullName}
                         </p>
-
-                        {/* ✅ SAFE STRING ONLY */}
                         <p className="text-sm opacity-60 truncate">
-                          {lastMessageText}
+                          {user.lastMessage?.text || ""}
                         </p>
                       </div>
 
@@ -192,23 +145,13 @@ const ChatSidebar = () => {
             </div>
           </motion.div>
         ) : (
-          <motion.div
-            key="new-chat"
-            initial={{ x: 80, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 80, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="h-full"
-          >
-            <NewChatSidebar onBack={() => setView("chats")} />
-          </motion.div>
+          <NewChatSidebar onBack={() => setView("chats")} />
         )}
       </AnimatePresence>
     </div>
   );
 };
 
-/* ---------------- Empty State ---------------- */
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full p-8 text-center">
     <MessageSquare className="w-8 h-8 opacity-40 mb-4" />

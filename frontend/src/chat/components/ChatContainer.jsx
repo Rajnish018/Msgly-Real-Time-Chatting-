@@ -10,7 +10,6 @@ import { axiosInstance } from "../../lib/axios";
 const ChatContainer = () => {
   const {
     messages,
-    getMessages,
     isMessagesLoading,
     selectedUser,
     subscribeToMessages,
@@ -21,28 +20,37 @@ const ChatContainer = () => {
 
   const messagesEndRef = useRef(null);
 
-  /* ================= FETCH + SOCKET ================= */
+  /* =========================================================
+     SOCKET + READ RECEIPT
+  ========================================================= */
   useEffect(() => {
     if (!selectedUser?._id) return;
 
     subscribeToMessages();
     subscribeToTyping();
 
-    getMessages(selectedUser._id);
+    // mark messages as read
     axiosInstance.patch(`/messages/read/${selectedUser._id}`);
 
     return () => {
       unsubscribeFromMessages();
       unsubscribeFromTyping();
     };
-  }, [getMessages, selectedUser._id, subscribeToMessages, subscribeToTyping, unsubscribeFromMessages, unsubscribeFromTyping]);
+  }, [selectedUser?._id]);
 
-  /* ================= AUTO SCROLL ================= */
+  /* =========================================================
+     AUTO SCROLL (WHATSAPP STYLE)
+  ========================================================= */
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "end",
+    });
   }, [messages]);
 
-  /* ================= EMPTY ================= */
+  /* =========================================================
+     EMPTY STATE
+  ========================================================= */
   if (!selectedUser) {
     return (
       <div className="flex-1 flex items-center justify-center text-base-content/60">
@@ -51,52 +59,38 @@ const ChatContainer = () => {
     );
   }
 
-  /* ================= LOADING ================= */
+  /* =========================================================
+     LOADING
+  ========================================================= */
   if (isMessagesLoading) {
     return <ChatLoadingState />;
   }
 
   return (
-  <div className="flex flex-col bg-base-100 h-full w-full">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-base-100">
+      {/* HEADER */}
+      <div className="shrink-0 border-b border-base-300">
+        <ChatHeader />
+      </div>
 
-    {/* HEADER (fixed) */}
-    <div className="shrink-0 sticky top-0 z-10 bg-base-100">
-      <ChatHeader />
+      {/* MESSAGES — ONLY SCROLL AREA */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2">
+        {messages.length === 0 ? (
+          <ChatEmptyState />
+        ) : (
+          <ChatMessages
+            messages={messages}
+            messagesEndRef={messagesEndRef}
+          />
+        )}
+      </div>
+
+      {/* INPUT — FIXED BOTTOM */}
+      <div className="shrink-0 border-t border-base-300 bg-base-100">
+        <MessageInput />
+      </div>
     </div>
-
-    {/* MESSAGES (scrollable) */}
-    <div className="flex-1 min-h-0">
-      {messages.length === 0 ? (
-        <ChatEmptyState />
-      ) : (
-        <ChatMessages
-          messages={messages}
-          messagesEndRef={messagesEndRef}
-        />
-      )}
-    </div>
-
-    {/* INPUT (fixed bottom) */}
-    <div
-  className="
-    shrink-0
-    sticky
-    bottom-5
-    z-10
-    bg-base-100/95
-    backdrop-blur
-    border-t border-base-300
-    shadow-[0_-4px_12px_rgba(0,0,0,0.04)]
-    rounded-t-xl
-    md:rounded-none
-  "
->
-  <MessageInput />
-</div>
-
-
-  </div>
-);
-}
+  );
+};
 
 export default ChatContainer;

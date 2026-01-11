@@ -24,6 +24,7 @@ const allowedOrigins = [
    MIDDLEWARES
 ====================== */
 app.use(express.json({ limit: "10mb" }));
+
 app.use(cookieParser());
 
 app.use(

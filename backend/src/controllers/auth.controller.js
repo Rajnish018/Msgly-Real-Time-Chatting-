@@ -39,15 +39,14 @@ export const signup = async (req, res) => {
     });
 
     /* ---------- issue JWT ---------- */
-   const token= generateToken(user._id, res);
+   generateToken(user._id, res);
+
 
     /* ---------- response ---------- */
     return res.status(201).json({
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      profilePic: user.profilePic,
-      token,
     });
   } catch (error) {
     console.error("Signup error:", error);
@@ -80,15 +79,14 @@ export const login = async (req, res) => {
     }
 
     /* ---------- issue JWT ---------- */
-  const token=  generateToken(user._id, res);
+      generateToken(user._id, res);
 
     /* ---------- response ---------- */
     return res.status(200).json({
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      profilePic: user.profilePic,
-      token,
+      
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -101,10 +99,11 @@ export const login = async (req, res) => {
 ========================================================= */
 export const logout = async (req, res) => {
   try {
-    res.clearCookie(process.env.COOKIE_NAME, {
+    res.cookie(process.env.COOKIE_NAME || "jwt", "", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      expires: new Date(0), // 🔥 force delete
     });
 
     return res.status(200).json({ message: "Logged out successfully" });
@@ -113,6 +112,7 @@ export const logout = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 
 /* =========================================================

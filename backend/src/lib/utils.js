@@ -8,11 +8,11 @@ export const generateToken = (userId, res) => {
   );
 
   res.cookie(process.env.COOKIE_NAME || "jwt", token, {
-    httpOnly: true,
+    httpOnly: true,                             // 🔥 cannot be read by JS
     secure: process.env.NODE_ENV === "production",
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 
-  return token;
+  //  DO NOT return token
 };
