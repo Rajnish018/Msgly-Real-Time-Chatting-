@@ -99,11 +99,10 @@ export const login = async (req, res) => {
 ========================================================= */
 export const logout = async (req, res) => {
   try {
-    res.cookie("jwt", "", {
+    res.clearCookie(process.env.COOKIE_NAME, {
       httpOnly: true,
-      sameSite: "strict",
       secure: process.env.NODE_ENV === "production",
-      maxAge: 0,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
     });
 
     return res.status(200).json({ message: "Logged out successfully" });
@@ -112,6 +111,7 @@ export const logout = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 /* =========================================================
    UPDATE PROFILE PICTURE
