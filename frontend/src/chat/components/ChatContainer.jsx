@@ -74,7 +74,7 @@ const ChatContainer = () => {
       </div>
 
       {/* MESSAGES — ONLY SCROLL AREA */}
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-2">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         {messages.length === 0 ? (
           <ChatEmptyState />
         ) : (
@@ -86,7 +86,7 @@ const ChatContainer = () => {
       </div>
 
       {/* INPUT — FIXED BOTTOM */}
-      <div className="shrink-0 border-t border-base-300 bg-base-100">
+      <div className="shrink-0">
         <MessageInput />
       </div>
     </div>
