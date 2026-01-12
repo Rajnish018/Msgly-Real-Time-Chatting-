@@ -31,11 +31,11 @@ const ChatLayout = () => {
   ====================== */
   useEffect(() => {
     if (!isSocketConnected || !socket) {
-      console.log("⛔ ChatLayout: socket not connected yet");
+      // console.log("⛔ ChatLayout: socket not connected yet");
       return;
     }
 
-    console.log("🟢 ChatLayout: socket connected", socket.id);
+    // console.log("🟢 ChatLayout: socket connected", socket.id);
 
     subscribeToUserStatus();
 

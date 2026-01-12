@@ -103,7 +103,7 @@ export const useAuthStore = create((set, get) => ({
     });
 
     socket.on("connect", () => {
-      console.log("🟢 SOCKET CONNECTED:", socket.id);
+      // console.log("🟢 SOCKET CONNECTED:", socket.id);
 
       set({
         socket,
@@ -112,7 +112,7 @@ export const useAuthStore = create((set, get) => ({
       });
     });
 
-    /* 🔥 FULL SNAPSHOT (CRITICAL FIX) */
+    /* FULL SNAPSHOT (CRITICAL FIX) */
     socket.on("onlineUsers", (users) => {
       const map = {};
       users.forEach((id) => {
@@ -139,7 +139,7 @@ export const useAuthStore = create((set, get) => ({
     });
 
     socket.on("disconnect", () => {
-      console.log("🔴 SOCKET DISCONNECTED");
+      console.log(" SOCKET DISCONNECTED");
       set({
         socket: null,
         isSocketConnected: false,
@@ -147,7 +147,7 @@ export const useAuthStore = create((set, get) => ({
     });
 
     socket.on("connect_error", (err) => {
-      console.error("❌ SOCKET ERROR:", err.message);
+      console.error("SOCKET ERROR:", err.message);
       set({ socketConnecting: false });
     });
   },

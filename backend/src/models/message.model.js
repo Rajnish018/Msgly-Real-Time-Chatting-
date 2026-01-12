@@ -30,6 +30,19 @@ const messageSchema = new mongoose.Schema(
       default: "",
     },
 
+    /* =========================================================
+       AUDIO MESSAGE SUPPORT
+    ========================================================= */
+    audio: {
+      url: {
+        type: String,
+        default: "",
+      },
+      duration: {
+        type: Number, // seconds
+      },
+    },
+
     isRead: {
       type: Boolean,
       default: false,
@@ -38,8 +51,39 @@ const messageSchema = new mongoose.Schema(
 
     messageType: {
       type: String,
-      enum: ["text", "image", "system"],
+      enum: ["text", "image", "audio", "system"],
       default: "text",
+      index: true,
+    },
+
+    /* =========================================================
+       EDIT MESSAGE SUPPORT
+    ========================================================= */
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+
+    editedAt: {
+      type: Date,
+    },
+
+    /* =========================================================
+       DELETE MESSAGE (SOFT DELETE)
+    ========================================================= */
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    /* =========================================================
+       MESSAGE REACTIONS (userId -> emoji)
+    ========================================================= */
+    reactions: {
+      type: Map,
+      of: String,
+      default: {},
     },
   },
   {
@@ -57,7 +101,16 @@ messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
    OUTPUT SANITIZATION
 ========================================================= */
 messageSchema.methods.toJSON = function () {
-  return this.toObject();
+  const obj = this.toObject();
+
+  // Hide content if message is deleted
+  if (obj.isDeleted) {
+    obj.text = "This message was deleted";
+    obj.image = "";
+    obj.audio = {};
+  }
+
+  return obj;
 };
 
 /* =========================================================

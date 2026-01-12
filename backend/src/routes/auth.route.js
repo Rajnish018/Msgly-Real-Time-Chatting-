@@ -14,4 +14,5 @@ router.get("/search", protectRoute, searchUserByEmail);
 
 router.get("/check", protectRoute, checkAuth);
 
+
 export default router;

@@ -1,53 +1,70 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import ApiError from "../utlis/ApiError.js";
 
+/* =========================================================
+   AUTH PROTECTION MIDDLEWARE
+========================================================= */
 export const protectRoute = async (req, res, next) => {
   try {
     const cookieName = process.env.COOKIE_NAME || "jwt";
     const token = req.cookies?.[cookieName];
 
-    // No token
+    /* ---------- step:1 - check token ---------- */
     if (!token) {
-      return res.status(401).json({
+      throw new ApiError({
+        statusCode: 401,
         message: "Unauthorized - Authentication required",
       });
     }
 
-    //  Verify token
+    /* ---------- step:2 - verify token ---------- */
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    //  Fetch user
+    /* ---------- step:3 - fetch user ---------- */
     const user = await User.findById(decoded.userId)
       .select("-password")
       .lean();
 
     if (!user) {
-      return res.status(401).json({
+      throw new ApiError({
+        statusCode: 401,
         message: "Unauthorized - User not found",
       });
     }
 
-    // Attach user to request
+    /* ---------- step:4 - attach user ---------- */
     req.user = user;
-
     next();
   } catch (error) {
-    
+
+    /* ---------- token expired ---------- */
     if (error.name === "TokenExpiredError") {
-      return res.status(401).json({
-        message: "Session expired. Please log in again.",
-      });
+      return next(
+        new ApiError({
+          statusCode: 401,
+          message: "Session expired. Please log in again.",
+        })
+      );
     }
 
+    /* ---------- invalid token ---------- */
     if (error.name === "JsonWebTokenError") {
-      return res.status(401).json({
-        message: "Invalid authentication token",
-      });
+      return next(
+        new ApiError({
+          statusCode: 401,
+          message: "Invalid authentication token",
+        })
+      );
     }
 
+    /* ---------- fallback ---------- */
     console.error("protectRoute error:", error.message);
-    return res.status(401).json({
-      message: "Unauthorized",
-    });
+    return next(
+      new ApiError({
+        statusCode: 401,
+        message: "Unauthorized",
+      })
+    );
   }
 };

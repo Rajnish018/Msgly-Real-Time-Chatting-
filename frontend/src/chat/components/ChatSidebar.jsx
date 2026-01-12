@@ -119,9 +119,9 @@ const ChatSidebar = () => {
                           className="w-12 h-12 rounded-full object-cover"
                           alt={user.fullName}
                         />
-                        {isOnline && (
+                        {/* {isOnline && (
                           <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-base-100" />
-                        )}
+                        )} */}
                       </div>
 
                       <div className="flex-1 min-w-0 text-left">

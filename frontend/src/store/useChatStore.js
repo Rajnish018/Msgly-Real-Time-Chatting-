@@ -11,9 +11,9 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   selectedUser: null,
 
-  typingUsers: {},          // { [userId]: true }
-  onlineUsers: {},          // { [userId]: true }
-  lastSeenMap: {},          // { [userId]: timestamp }
+  typingUsers: {},        // { [userId]: true }
+  onlineUsers: {},        // { [userId]: true }
+  lastSeenMap: {},        // { [userId]: timestamp }
 
   isUsersLoading: false,
   isMessagesLoading: false,
@@ -28,11 +28,15 @@ export const useChatStore = create((set, get) => ({
     set({ isUsersLoading: true });
     try {
       const res = await axiosInstance.get("/messages/users");
-      set({ users: res.data, hasFetchedUsers: true });
+
+      set({
+        users: Array.isArray(res.data?.data) ? res.data.data : [],
+        hasFetchedUsers: true,
+      });
     } catch (e) {
       console.error("getUsers error:", e);
       toast.error("Failed to load chats");
-      set({ hasFetchedUsers: true });
+      set({ users: [], hasFetchedUsers: true });
     } finally {
       set({ isUsersLoading: false });
     }
@@ -47,88 +51,91 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true, messages: [] });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      set({ messages: res.data });
-    } catch {
+
+      set({
+        messages: Array.isArray(res.data?.data) ? res.data.data : [],
+      });
+    } catch (e) {
+      console.error("getMessages error:", e);
       toast.error("Failed to load messages");
+      set({ messages: [] });
     } finally {
       set({ isMessagesLoading: false });
     }
   },
 
- sendMessage: async (data) => {
-  const { selectedUser, messages } = get();
-  const authUser = useAuthStore.getState().authUser;
+  /* =========================================================
+     SEND MESSAGE (OPTIMISTIC UI)
+  ========================================================= */
+  sendMessage: async (data) => {
+    const { selectedUser, messages } = get();
+    const authUser = useAuthStore.getState().authUser;
 
-  if (!selectedUser || !authUser) return;
+    if (!selectedUser || !authUser) return;
 
-  // ===============================
-  // 1️⃣ OPTIMISTIC MESSAGE
-  // ===============================
-  const optimisticMsg = {
-    _id: "temp-" + Date.now(),
-    senderId: authUser._id,
-    receiverId: selectedUser._id,
-    text: data.text || null,
-    image: data.image || null,
-    audio: data.audio || null,
-    createdAt: new Date().toISOString(),
-    isRead: false,
-    sending: true, // 👈 for UI
-  };
+    const optimisticMsg = {
+      _id: "temp-" + Date.now(),
+      senderId: authUser._id,
+      receiverId: selectedUser._id,
+      text: data.text || null,
+      image: data.image || null,
+      audio: data.audio || null,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+      sending: true,
+    };
 
-  // 🔥 INSTANT UI UPDATE (NO RELOAD)
-  set({
-    messages: [...messages, optimisticMsg],
-  });
+    set({ messages: [...messages, optimisticMsg] });
 
-  try {
-    // ===============================
-    // 2️⃣ SEND TO BACKEND
-    // ===============================
-    await axiosInstance.post(
-      `/messages/send/${selectedUser._id}`,
-      data
-    );
-  } catch (error) {
-    toast.error("Failed to send message");
+    try {
+      await axiosInstance.post(
+        `/messages/send/${selectedUser._id}`,
+        data
+      );
+    } catch (error) {
+      toast.error("Failed to send message");
 
-    // ===============================
-    // 3️⃣ ROLLBACK ON FAILURE
-    // ===============================
-    set({
-      messages: get().messages.filter(
-        (m) => m._id !== optimisticMsg._id
-      ),
-    });
-  }
-},
+      set({
+        messages: get().messages.filter(
+          (m) => m._id !== optimisticMsg._id
+        ),
+      });
+    }
+  },
 
-editMessage: async (messageId, text) => {
-  try {
-    await axiosInstance.patch(`/messages/${messageId}`, { text });
+  /* =========================================================
+     EDIT MESSAGE
+  ========================================================= */
+  editMessage: async (messageId, text) => {
+    try {
+      await axiosInstance.put(`/messages/${messageId}/edit`, { text });
 
-    set((state) => ({
-      messages: state.messages.map((m) =>
-        m._id === messageId ? { ...m, text, edited: true } : m
-      ),
-    }));
-  } catch {
-    toast.error("Edit failed");
-  }
-},
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m._id === messageId
+            ? { ...m, text, isEdited: true }
+            : m
+        ),
+      }));
+    } catch {
+      toast.error("Edit failed");
+    }
+  },
 
-deleteMessage: async (messageId) => {
-  try {
-    await axiosInstance.delete(`/messages/${messageId}`);
+  /* =========================================================
+     DELETE MESSAGE
+  ========================================================= */
+  deleteMessage: async (messageId) => {
+    try {
+      await axiosInstance.delete(`/messages/${messageId}`);
 
-    set((state) => ({
-      messages: state.messages.filter((m) => m._id !== messageId),
-    }));
-  } catch {
-    toast.error("Delete failed");
-  }
-},
-
+      set((state) => ({
+        messages: state.messages.filter((m) => m._id !== messageId),
+      }));
+    } catch {
+      toast.error("Delete failed");
+    }
+  },
 
   /* =========================================================
      SOCKET — MESSAGES
@@ -146,8 +153,6 @@ deleteMessage: async (messageId) => {
         selectedUser &&
         (String(msg.senderId) === String(selectedUser._id) ||
          String(msg.receiverId) === String(selectedUser._id));
-
-      // get().getUsers(true);
 
       if (!isCurrentChat) return;
       if (messages.some((m) => m._id === msg._id)) return;
@@ -175,10 +180,7 @@ deleteMessage: async (messageId) => {
       if (String(from) !== String(selectedUser?._id)) return;
 
       set((state) => ({
-        typingUsers: {
-          ...state.typingUsers,
-          [from]: true,
-        },
+        typingUsers: { ...state.typingUsers, [from]: true },
       }));
     });
 
@@ -197,66 +199,53 @@ deleteMessage: async (messageId) => {
     socket?.off("stopTyping");
   },
 
- /* =========================================================
-   SOCKET — USER STATUS (ONLINE / LAST SEEN) ✅ FIXED
-========================================================= */
-subscribeToUserStatus: () => {
-  const socket = useAuthStore.getState().socket;
-  if (!socket) return;
+  /* =========================================================
+     SOCKET — USER STATUS (ONLINE / LAST SEEN)
+  ========================================================= */
+  subscribeToUserStatus: () => {
+    const socket = useAuthStore.getState().socket;
+    if (!socket) return;
 
-  console.log("🟡 subscribeToUserStatus CALLED:", socket.id);
+    socket.off("onlineUsers");
+    socket.off("userStatus");
 
-  // cleanup old listeners
-  socket.off("onlineUsers");
-  socket.off("userStatus");
-
-  /* =====================================================
-     1️⃣ SNAPSHOT — FULL ONLINE USERS LIST (CRITICAL)
-  ===================================================== */
-  socket.on("onlineUsers", (userIds) => {
-    console.log("🟢 onlineUsers snapshot:", userIds);
-
-    const onlineMap = {};
-    userIds.forEach((id) => {
-      onlineMap[String(id)] = true;
+    socket.on("onlineUsers", (userIds) => {
+      const onlineMap = {};
+      userIds.forEach((id) => {
+        onlineMap[String(id)] = true;
+      });
+      set({ onlineUsers: onlineMap });
     });
 
-    set({ onlineUsers: onlineMap });
-  });
-
-  /* =====================================================
-     2️⃣ INCREMENTAL UPDATES
-  ===================================================== */
-  socket.on("userStatus", ({ userId, status, lastSeen }) => {
-    console.log("🟣 userStatus received:", { userId, status, lastSeen });
-
-    if (status === "online") {
-      set((state) => ({
-        onlineUsers: {
-          ...state.onlineUsers,
-          [String(userId)]: true,
-        },
-      }));
-    } else {
-      set((state) => {
-        const online = { ...state.onlineUsers };
-        delete online[String(userId)];
-
-        return {
-          onlineUsers: online,
-          lastSeenMap: {
-            ...state.lastSeenMap,
-            [String(userId)]: lastSeen,
+    socket.on("userStatus", ({ userId, status, lastSeen }) => {
+      if (status === "online") {
+        set((state) => ({
+          onlineUsers: {
+            ...state.onlineUsers,
+            [String(userId)]: true,
           },
-        };
-      });
-    }
-  });
-},
+        }));
+      } else {
+        set((state) => {
+          const online = { ...state.onlineUsers };
+          delete online[String(userId)];
 
+          return {
+            onlineUsers: online,
+            lastSeenMap: {
+              ...state.lastSeenMap,
+              [String(userId)]: lastSeen,
+            },
+          };
+        });
+      }
+    });
+  },
 
   unsubscribeFromUserStatus: () => {
-    useAuthStore.getState().socket?.off("userStatus");
+    const socket = useAuthStore.getState().socket;
+    socket?.off("onlineUsers");
+    socket?.off("userStatus");
   },
 
   /* =========================================================

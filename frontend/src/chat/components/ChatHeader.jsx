@@ -5,14 +5,23 @@ import { useChatStore } from "../../store/useChatStore";
    LAST SEEN FORMATTER
 ========================================================= */
 const formatLastSeen = (timestamp) => {
+
+  // console.log("🟡 last seen timestamp:", timestamp);
+
   if (!timestamp) return "last seen recently";
 
-  const date = new Date(timestamp);
+  const date = new Date(Number(timestamp));
+
+  if (isNaN(date.getTime())) {
+    return "last seen recently";
+  }
+
   return `last seen at ${date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   })}`;
 };
+
 
 const ChatHeader = () => {
   const {
@@ -25,7 +34,7 @@ const ChatHeader = () => {
 
   if (!selectedUser) return null;
 
-  // 🔥 ALWAYS normalize ID to string
+  //  ALWAYS normalize ID to string
   const userId = String(selectedUser._id);
 
   const isTyping = !!typingUsers?.[userId];
@@ -38,12 +47,12 @@ const ChatHeader = () => {
     ? "online"
     : formatLastSeen(lastSeen);
 
-  // ✅ DEBUG (safe to remove later)
-  console.log("🟢 presence", {
-    selectedUser: userId,
-    onlineUsers,
-    lastSeenMap,
-  });
+ 
+  // console.log("presence", {
+  //   selectedUser: userId,
+  //   onlineUsers,
+  //   lastSeenMap,
+  // });
 
   return (
     <div className="p-2.5 border-b border-base-300 bg-base-100">
@@ -58,9 +67,9 @@ const ChatHeader = () => {
                 alt={selectedUser.fullName}
               />
 
-              {isOnline && (
+              {/* {isOnline && (
                 <span className="absolute bottom-0 right-0 size-2.5 bg-green-500 rounded-full ring-2 ring-base-100" />
-              )}
+              )} */}
             </div>
           </div>
 

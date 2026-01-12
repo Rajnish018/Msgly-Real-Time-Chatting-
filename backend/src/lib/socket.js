@@ -69,10 +69,10 @@ io.on("connection", (socket) => {
   const sockets = userSockets.get(userId);
   sockets.add(socket.id);
 
-  /* 🔥 FULL SNAPSHOT (ALWAYS SAFE) */
+  /*  FULL SNAPSHOT (ALWAYS SAFE) */
   socket.emit("onlineUsers", Array.from(userSockets.keys()));
 
-  /* 🔥 ONLINE ONLY ON FIRST SOCKET */
+  /*  ONLINE ONLY ON FIRST SOCKET */
   if (sockets.size === 1) {
     io.emit("userStatus", {
       userId,
@@ -80,7 +80,7 @@ io.on("connection", (socket) => {
     });
   }
 
-  console.log("🟢 User connected:", userId, "| sockets:", sockets.size);
+  console.log(" User connected:", userId, "| sockets:", sockets.size);
 
   /* ---------- typing ---------- */
   socket.on("typing", ({ to }) => {
@@ -106,7 +106,7 @@ io.on("connection", (socket) => {
 
     sockets.delete(socket.id);
 
-    console.log("🔴 Socket disconnected:", socket.id);
+    console.log(" Socket disconnected:", socket.id);
 
     /* 🔥 OFFLINE ONLY ON LAST SOCKET */
     if (sockets.size === 0) {
