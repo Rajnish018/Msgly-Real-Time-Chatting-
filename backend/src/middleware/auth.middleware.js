@@ -1,31 +1,70 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.model.js";
+import ApiError from "../utlis/ApiError.js";
 
+/* =========================================================
+   AUTH PROTECTION MIDDLEWARE
+========================================================= */
 export const protectRoute = async (req, res, next) => {
   try {
-    const token = req.cookies.jwt;
+    const cookieName = process.env.COOKIE_NAME || "jwt";
+    const token = req.cookies?.[cookieName];
 
+    /* ---------- step:1 - check token ---------- */
     if (!token) {
-      return res.status(401).json({ message: "Unauthorized - No Token Provided" });
+      throw new ApiError({
+        statusCode: 401,
+        message: "Unauthorized - Authentication required",
+      });
     }
 
+    /* ---------- step:2 - verify token ---------- */
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    if (!decoded) {
-      return res.status(401).json({ message: "Unauthorized - Invalid Token" });
-    }
-
-    const user = await User.findById(decoded.userId).select("-password");
+    /* ---------- step:3 - fetch user ---------- */
+    const user = await User.findById(decoded.userId)
+      .select("-password")
+      .lean();
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      throw new ApiError({
+        statusCode: 401,
+        message: "Unauthorized - User not found",
+      });
     }
 
+    /* ---------- step:4 - attach user ---------- */
     req.user = user;
-
     next();
   } catch (error) {
-    console.log("Error in protectRoute middleware: ", error.message);
-    res.status(500).json({ message: "Internal server error" });
+
+    /* ---------- token expired ---------- */
+    if (error.name === "TokenExpiredError") {
+      return next(
+        new ApiError({
+          statusCode: 401,
+          message: "Session expired. Please log in again.",
+        })
+      );
+    }
+
+    /* ---------- invalid token ---------- */
+    if (error.name === "JsonWebTokenError") {
+      return next(
+        new ApiError({
+          statusCode: 401,
+          message: "Invalid authentication token",
+        })
+      );
+    }
+
+    /* ---------- fallback ---------- */
+    console.error("protectRoute error:", error.message);
+    return next(
+      new ApiError({
+        statusCode: 401,
+        message: "Unauthorized",
+      })
+    );
   }
 };

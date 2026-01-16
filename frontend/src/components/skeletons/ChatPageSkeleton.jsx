@@ -2,7 +2,7 @@ const ChatPageSkeleton = () => {
   return (
     <div className="flex h-full w-full" aria-busy="true">
       {/* Sidebar skeleton */}
-      <aside className="hidden sm:flex w-[300px] lg:w-[400px] bg-base-100 border-r flex-col">
+      <aside className="hidden sm:flex w-[380px] lg:w-[400px] bg-base-100  flex-col">
         <div className="p-4 space-y-4 border-b border-base-300">
           <div className="skeleton h-6 w-24" />
           <div className="skeleton h-10 w-full rounded-full" />

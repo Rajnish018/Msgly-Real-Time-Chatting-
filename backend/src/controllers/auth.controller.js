@@ -2,184 +2,243 @@ import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
 import cloudinary from "../lib/cloudinary.js";
 import { generateToken } from "../lib/utils.js";
+import ApiError from "../utlis/ApiError.js";
+import { sendSuccess } from "../utlis/ApiResponse.js";
+import asyncHandler from "../utlis/asyncHandler.js";
 
 /* =========================================================
    SIGNUP
 ========================================================= */
-export const signup = async (req, res) => {
-  try {
-    const { fullName, email, password } = req.body;
 
-    /* ---------- validation ---------- */
-    if (!fullName || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
-    }
+export const signup = asyncHandler(async (req, res) => {
 
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({ message: "Password must be at least 6 characters" });
-    }
+  /* ---------- step:1 - get data ---------- */
 
-    /* ---------- check existing user ---------- */
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(409).json({ message: "Email already exists" });
-    }
+  const { fullName, email, password } = req.body;
 
-    /* ---------- hash password ---------- */
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+  /* ---------- step:2 - validation ---------- */
 
-    /* ---------- create user ---------- */
-    const user = await User.create({
-      fullName,
-      email,
-      password: hashedPassword,
+  if (!fullName || !email || !password) {
+    throw new ApiError({ statusCode: 400, message: "All fields are required" });
+  }
+
+  if (password.length < 6) {
+    throw new ApiError({
+      statusCode: 400,
+      message: "Password must be at least 6 characters",
     });
+  }
 
-    /* ---------- issue JWT ---------- */
-    generateToken(user._id, res);
+  /* ---------- step:3 - check existing user ---------- */
 
-    /* ---------- response ---------- */
-    return res.status(201).json({
+  const existingUser = await User.findOne({ email });
+  if (existingUser) {
+    throw new ApiError({ statusCode: 409, message: "Email already exists" });
+  }
+
+  /* ---------- step:4 - hash password ---------- */
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  /* ---------- step:5 - create user ---------- */
+
+  const user = await User.create({
+    fullName,
+    email,
+    password: hashedPassword,
+  });
+
+  /* ---------- step:6 - generate JWT Token ---------- */
+
+  generateToken(user._id, res);
+
+  /* ---------- step:7 - send response ---------- */
+
+  return sendSuccess(res, {
+    statusCode: 201,
+    message: "User registered successfully",
+    data: {
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      profilePic: user.profilePic,
-    });
-  } catch (error) {
-    console.error("Signup error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
+    },
+  });
+});
 
 /* =========================================================
    LOGIN
 ========================================================= */
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
 
-    /* ---------- validation ---------- */
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
-    }
+export const login = asyncHandler(async (req, res) => {
 
-    /* ---------- find user (include password) ---------- */
-    const user = await User.findOne({ email }).select("+password");
-    if (!user) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+  /* ---------- step:1 - validation ---------- */
 
-    /* ---------- compare password ---------- */
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
+  const { email, password } = req.body;
 
-    /* ---------- issue JWT ---------- */
-    generateToken(user._id, res);
+  if (!email || !password) {
+    throw new ApiError({
+      statusCode: 400,
+      message: "Email and password required",
+    });
+  }
 
-    /* ---------- response ---------- */
-    return res.status(200).json({
+  /* ---------- step:2 - find user ---------- */
+
+  const user = await User.findOne({ email }).select("+password");
+  if (!user) {
+    throw new ApiError({ statusCode: 401, message: "Invalid credentials" });
+  }
+
+  /* ---------- step:3 - compare password ---------- */
+
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    throw new ApiError({ statusCode: 401, message: "Invalid credentials" });
+  }
+
+  /* ---------- step:4 - generate JWT Token ---------- */
+
+  generateToken(user._id, res);
+
+  /* ---------- step:5 - send response ---------- */
+
+  return sendSuccess(res, {
+    message: "Login successful",
+    data: {
       _id: user._id,
       fullName: user.fullName,
       email: user.email,
-      profilePic: user.profilePic,
-    });
-  } catch (error) {
-    console.error("Login error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
+    },
+  });
+});
 
 /* =========================================================
    LOGOUT
 ========================================================= */
-export const logout = async (req, res) => {
-  try {
-    res.cookie("jwt", "", {
-      httpOnly: true,
-      sameSite: "strict",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 0,
-    });
 
-    return res.status(200).json({ message: "Logged out successfully" });
-  } catch (error) {
-    console.error("Logout error:", error);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
+export const logout = asyncHandler(async (req, res) => {
+
+  /* ---------- clear JWT cookie ---------- */
+
+  res.cookie(process.env.COOKIE_NAME || "jwt", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    expires: new Date(0),
+  });
+
+  return sendSuccess(res, {
+    message: "Logged out successfully",
+  });
+});
 
 /* =========================================================
    UPDATE PROFILE PICTURE
 ========================================================= */
-export const updateProfile = async (req, res) => {
-  try {
-    const { profilePic } = req.body;
-    const userId = req.user._id;
 
-    if (!profilePic) {
-      return res.status(400).json({ message: "Profile picture is required" });
-    }
+export const updateProfile = asyncHandler(async (req, res) => {
 
-    /* ---------- upload to cloudinary ---------- */
-    const uploadResult = await cloudinary.uploader.upload(profilePic, {
-      folder: "profiles",
+  /* ---------- step:1 - get data ---------- */
+
+  const { profilePic } = req.body;
+  const userId = req.user._id;
+
+  if (!profilePic) {
+    throw new ApiError({
+      statusCode: 400,
+      message: "Profile picture is required",
     });
-
-    /* ---------- update user ---------- */
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { profilePic: uploadResult.secure_url },
-      { new: true }
-    );
-
-    return res.status(200).json(updatedUser);
-  } catch (error) {
-    console.error("Update profile error:", error);
-    return res.status(500).json({ message: "Internal server error" });
   }
-};
+
+  /* ---------- step:2 - upload to cloudinary ---------- */
+
+  const uploadResult = await cloudinary.uploader.upload(profilePic, {
+    folder: "profiles",
+  });
+
+  /* ---------- step:3 - update user ---------- */
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { profilePic: uploadResult.secure_url },
+    { new: true }
+  ).select("fullName email profilePic");
+
+  /*---------- step:4 - send response ---------- */
+
+  return sendSuccess(res, {
+    message: "Profile updated successfully",
+    data: updatedUser,
+  });
+});
 
 /* =========================================================
    CHECK AUTH (SESSION PERSISTENCE)
 ========================================================= */
-export const checkAuth = async (req, res) => {
-  try {
-    return res.status(200).json(req.user);
-  } catch (error) {
-    console.error("Check auth error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+
+export const checkAuth = asyncHandler(async (req, res) => {
+  return sendSuccess(res, {
+    message: "Authenticated user",
+    data: req.user,
+  });
+});
+
+/* =========================================================
+   SEARCH USER BY EMAIL
+========================================================= */
+
+export const searchUserByEmail = asyncHandler(async (req, res) => {
+
+  /* ---------- step:1 - get data ---------- */
+
+  const myId = req.user._id;
+  const { email } = req.query;
+
+  if (!email) {
+    throw new ApiError({ statusCode: 400, message: "Email is required" });
   }
-};
 
+  /* ---------- step:2 - search user ---------- */
 
+  const user = await User.findOne({
+    email: email.toLowerCase().trim(),
+    _id: { $ne: myId },
+  })
+    .select("fullName email profilePic")
+    .lean();
 
-export const searchUserByEmail = async (req, res) => {
-  try {
-    const myId = req.user._id;
-    const { email } = req.query;
+  /* ---------- step:3 - send response ---------- */
 
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
+  return sendSuccess(res, {
+    message: "User search result",
+    data: user || null,
+  });
+});
 
-    const user = await User.findOne({
-      email: email.toLowerCase().trim(),
-      _id: { $ne: myId }, // prevent self-chat
-    })
-      .select("fullName email profilePic")
-      .lean();
+/* =========================================================
+    GET USER DATA
+========================================================= */
 
-    // IMPORTANT:
-    // If not found → return null (NOT error)
-    return res.status(200).json(user || null);
-  } catch (error) {
-    console.error("searchUserByEmail error:", error);
-    return res.status(500).json({ message: "Internal server error" });
+export const getUserData = asyncHandler(async (req, res) => {
+
+  /* ---------- step:1 - get data ---------- */
+
+  const userId = req.params.id;
+
+  /* ---------- step:2 - get user ---------- */
+
+  const user = await User.findById(userId).select(
+    "fullName email profilePic"
+  );
+
+  if (!user) {
+    throw new ApiError({ statusCode: 404, message: "User not found" });
   }
-};
 
+  /* ---------- step:3 - send response ---------- */
+
+  return sendSuccess(res, {
+    message: "User data fetched",
+    data: user,
+  });
+});

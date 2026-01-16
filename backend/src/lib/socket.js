@@ -1,95 +1,126 @@
 import { Server } from "socket.io";
 import http from "http";
 import express from "express";
+import jwt from "jsonwebtoken";
+import cookieParser from "cookie-parser";
 
 const app = express();
 const server = http.createServer(app);
 
+/* ======================
+   SOCKET.IO SETUP
+====================== */
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173"],
+    origin: ["http://localhost:5173", process.env.CLIENT_URL].filter(Boolean),
     credentials: true,
   },
+  transports: ["websocket"],
 });
 
-/* =========================================================
-   ONLINE USERS MAP
-========================================================= */
-// { userId: socketId }
-const userSocketMap = new Map();
+/* ======================
+   COOKIE PARSER
+====================== */
+io.use((socket, next) => {
+  cookieParser()(socket.request, {}, next);
+});
 
-/* =========================================================
+/* ======================
+   AUTH
+====================== */
+io.use((socket, next) => {
+  try {
+    const token = socket.request.cookies?.[process.env.COOKIE_NAME || "jwt"];
+    if (!token) return next(new Error("Unauthorized"));
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = decoded.userId.toString();
+    next();
+  } catch {
+    next(new Error("Unauthorized"));
+  }
+});
+
+/* ======================
+   USER SOCKETS
+====================== */
+// userId -> Set<socketId>
+const userSockets = new Map();
+/* ======================
    HELPERS
-========================================================= */
+====================== */
 export const getReceiverSocketId = (userId) => {
-  return userSocketMap.get(userId);
+  const sockets = userSockets.get(userId.toString());
+  if (!sockets || sockets.size === 0) return null;
+  return [...sockets][0]; // pick one active socket
 };
 
-/* =========================================================
-   SOCKET CONNECTION
-========================================================= */
+/* ======================
+   SOCKET EVENTS
+====================== */
 io.on("connection", (socket) => {
-  const userId = socket.handshake.query.userId;
+  const userId = socket.userId;
 
-  if (!userId) {
-    socket.disconnect();
-    return;
+  /* ---------- register socket ---------- */
+  if (!userSockets.has(userId)) {
+    userSockets.set(userId, new Set());
   }
 
-  // 🔑 attach userId to socket
-  socket.userId = userId;
+  const sockets = userSockets.get(userId);
+  sockets.add(socket.id);
 
-  // store online user
-  userSocketMap.set(userId, socket.id);
+  /*  FULL SNAPSHOT (ALWAYS SAFE) */
+  socket.emit("onlineUsers", Array.from(userSockets.keys()));
 
-  console.log("User connected:", userId);
+  /*  ONLINE ONLY ON FIRST SOCKET */
+  if (sockets.size === 1) {
+    io.emit("userStatus", {
+      userId,
+      status: "online",
+    });
+  }
 
-  /* ---------- broadcast online users ---------- */
-  io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
+  console.log(" User connected:", userId, "| sockets:", sockets.size);
 
-  /* =========================================================
-     TYPING INDICATOR
-  ========================================================= */
+  /* ---------- typing ---------- */
   socket.on("typing", ({ to }) => {
-    const receiverSocketId = getReceiverSocketId(to);
-    // console.log("➡️ forwarding typing to socket:", receiverSocketId);
-
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("typing", {
-        from: socket.userId,
-      });
-    }
+    const targets = userSockets.get(to);
+    if (!targets) return;
+    targets.forEach((id) =>
+      io.to(id).emit("typing", { from: userId })
+    );
   });
 
   socket.on("stopTyping", ({ to }) => {
-    const receiverSocketId = getReceiverSocketId(to);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("stopTyping", {
-        from: socket.userId,
+    const targets = userSockets.get(to);
+    if (!targets) return;
+    targets.forEach((id) =>
+      io.to(id).emit("stopTyping", { from: userId })
+    );
+  });
+
+  /* ---------- disconnect ---------- */
+  socket.on("disconnect", () => {
+    const sockets = userSockets.get(userId);
+    if (!sockets) return;
+
+    sockets.delete(socket.id);
+
+    console.log(" Socket disconnected:", socket.id);
+
+    /* 🔥 OFFLINE ONLY ON LAST SOCKET */
+    if (sockets.size === 0) {
+      userSockets.delete(userId);
+
+      io.emit("userStatus", {
+        userId,
+        status: "offline",
+        lastSeen: Date.now(),
       });
+
+      io.emit("onlineUsers", Array.from(userSockets.keys()));
     }
   });
-
-//   socket.on("typing", ({ to }) => {
-//   console.log("📨 typing received from", socket.userId, "to", to);
-// });
-
-
-  /* =========================================================
-     DISCONNECT
-  ========================================================= */
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.userId);
-
-    userSocketMap.delete(socket.userId);
-
-    io.emit("getOnlineUsers", Array.from(userSocketMap.keys()));
-  });
-
-
 });
 
-/* =========================================================
-   EXPORTS
-========================================================= */
 export { io, app, server };

@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { AnimatePresence } from "framer-motion";
+import { useEffect, useRef } from "react";
 import ChatSidebar from "../components/ChatSidebar";
 import ChatContainer from "../components/ChatContainer";
 import NoChatSelected from "../components/NoChatSelected";
@@ -8,45 +7,46 @@ import SlidePanel from "../../components/SlidePanel";
 import { useChatStore } from "../../store/useChatStore";
 
 const ChatLayout = () => {
+  console.log("Rendering ChatLayout");
   const { selectedUser, isUsersLoading, getUsers } = useChatStore();
+  const initializedRef = useRef(false);
 
+  // Fetch users once
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
     getUsers();
-  }, []);
+  }, [getUsers]);
 
   if (isUsersLoading) return <ChatPageSkeleton />;
 
   return (
-    <div className="h-full w-full bg-base-100 overflow-hidden">
-
-      {/* ================= DESKTOP LAYOUT ================= */}
-      <div className="hidden md:flex h-full w-full">
-        {/* Sidebar */}
-        <div className="w-[380px] lg:w-[420px] flex-shrink-0 border-r border-base-300">
+    <div className="h-screen w-full bg-base-100 overflow-hidden">
+      {/* DESKTOP */}
+      <div className="hidden md:flex h-full">
+        {/* Sidebar always visible */}
+        <div className="w-[380px] lg:w-[420px] border-r border-base-300">
           <ChatSidebar />
         </div>
 
-        {/* Chat */}
+        {/* Content controlled ONLY by selectedUser */}
         <div className="flex-1 h-full">
           {selectedUser ? <ChatContainer /> : <NoChatSelected />}
         </div>
       </div>
 
-      {/* ================= MOBILE LAYOUT ================= */}
-      <div className="md:hidden h-full w-full relative overflow-hidden">
-        <AnimatePresence mode="wait" initial={false}>
-          {!selectedUser ? (
-            <SlidePanel key="sidebar" direction="left">
-              <ChatSidebar />
-            </SlidePanel>
-          ) : (
-            <SlidePanel key="chat" direction="right">
-              <ChatContainer />
-            </SlidePanel>
-          )}
-        </AnimatePresence>
+      {/* MOBILE */}
+      <div className="md:hidden h-full relative">
+        {selectedUser ? (
+          <SlidePanel direction="right">
+            <ChatContainer />
+          </SlidePanel>
+        ) : (
+          <SlidePanel direction="left">
+            <ChatSidebar />
+          </SlidePanel>
+        )}
       </div>
-
     </div>
   );
 };
