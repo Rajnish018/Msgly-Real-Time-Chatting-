@@ -1,29 +1,60 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Search, MoreVertical, MessageSquare } from "lucide-react";
+
 import { useChatStore } from "../../store/useChatStore";
 import { useAuthStore } from "../../store/useAuthStore";
+
 import SidebarSkeleton from "../../components/skeletons/ChatPageSkeleton";
 import NewChatSidebar from "./NewChatSidebar";
 import ChatMenuDropdown from "./ChatMenuDropdown";
-import { Search, MoreVertical, MessageSquare } from "lucide-react";
 
+/* =========================================================
+   CHAT SIDEBAR
+========================================================= */
 const ChatSidebar = () => {
+  console.log("Rendering ChatSidebar");
+  /* ======================
+     STORES
+  ====================== */
   const {
     users,
     selectedUser,
     setSelectedUser,
     isUsersLoading,
-    onlineUsers, // ✅ CORRECT SOURCE
   } = useChatStore();
 
-  const { logout } = useAuthStore();
+  const { logout, onlineUsers } = useAuthStore();
+  console.log("Online Users:", onlineUsers);
+  console.log("Users in Sidebar:", users);
+  console.log("Selected User:", selectedUser);
 
+  /* ======================
+     LOCAL STATE
+  ====================== */
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [filter] = useState("all");
   const [menuOpen, setMenuOpen] = useState(false);
   const [view, setView] = useState("chats");
 
-  /* ---------------- Filtered Users ---------------- */
+  /* ======================
+     SAFE USER SELECT (🔥 IMPORTANT)
+  ====================== */
+  const handleSelectUser = useCallback(
+    (user) => {
+      if (!user?._id) return;
+
+      // 🔒 block re-select of active chat
+      if (selectedUser?._id === user._id) return;
+
+      setSelectedUser(user);
+    },
+    [selectedUser?._id, setSelectedUser]
+  );
+
+  /* ======================
+     FILTER USERS
+  ====================== */
   const filteredUsers = useMemo(() => {
     let list = [...users];
 
@@ -43,8 +74,14 @@ const ChatSidebar = () => {
     return list;
   }, [users, search, filter]);
 
+  /* ======================
+     LOADING
+  ====================== */
   if (isUsersLoading) return <SidebarSkeleton />;
 
+  /* ======================
+     RENDER
+  ====================== */
   return (
     <div className="h-full w-full bg-base-100 overflow-hidden">
       <AnimatePresence mode="wait">
@@ -56,7 +93,7 @@ const ChatSidebar = () => {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -40, opacity: 0 }}
           >
-            {/* Header */}
+            {/* ================= HEADER ================= */}
             <div className="p-4 border-b border-base-300">
               <div className="flex items-center justify-between mb-4">
                 <h1 className="text-xl font-bold">Chats</h1>
@@ -84,7 +121,7 @@ const ChatSidebar = () => {
                 </div>
               </div>
 
-              {/* Search */}
+              {/* ================= SEARCH ================= */}
               <div className="relative mb-3">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-50" />
                 <input
@@ -96,34 +133,41 @@ const ChatSidebar = () => {
               </div>
             </div>
 
-            {/* Chat List */}
+            {/* ================= CHAT LIST ================= */}
             <div className="flex-1 overflow-y-auto">
               {filteredUsers.length === 0 ? (
                 <EmptyState />
               ) : (
                 filteredUsers.map((user) => {
-                  const isOnline = !!onlineUsers[user._id]; // ✅ FIX
+                  const isOnline = !!onlineUsers[user._id];
                   const isActive = selectedUser?._id === user._id;
 
                   return (
                     <button
                       key={user._id}
-                      onClick={() => setSelectedUser(user)}
-                      className={`w-full px-4 py-3 flex gap-3 items-center transition ${
-                        isActive ? "bg-base-300" : "hover:bg-base-200"
-                      }`}
+                      disabled={isActive} // 🔒 block re-click
+                      onClick={() => handleSelectUser(user)}
+                      className={`w-full px-4 py-3 flex gap-3 items-center transition
+                        ${
+                          isActive
+                            ? "bg-base-300 cursor-default"
+                            : "hover:bg-base-200"
+                        }`}
                     >
+                      {/* Avatar */}
                       <div className="relative">
                         <img
                           src={user.profilePic || "/avatar.png"}
                           className="w-12 h-12 rounded-full object-cover"
                           alt={user.fullName}
                         />
-                        {/* {isOnline && (
+
+                        {isOnline && (
                           <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full ring-2 ring-base-100" />
-                        )} */}
+                        )}
                       </div>
 
+                      {/* Info */}
                       <div className="flex-1 min-w-0 text-left">
                         <p className="font-medium truncate">
                           {user.fullName}
@@ -133,6 +177,7 @@ const ChatSidebar = () => {
                         </p>
                       </div>
 
+                      {/* Unread */}
                       {user.unreadCount > 0 && (
                         <span className="ml-auto bg-primary text-black text-xs font-semibold px-2 py-0.5 rounded-full">
                           {user.unreadCount}
@@ -152,6 +197,9 @@ const ChatSidebar = () => {
   );
 };
 
+/* =========================================================
+   EMPTY STATE
+========================================================= */
 const EmptyState = () => (
   <div className="flex flex-col items-center justify-center h-full p-8 text-center">
     <MessageSquare className="w-8 h-8 opacity-40 mb-4" />
