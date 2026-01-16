@@ -1,8 +1,5 @@
 import mongoose from "mongoose";
 
-/* =========================================================
-   MESSAGE SCHEMA
-========================================================= */
 const messageSchema = new mongoose.Schema(
   {
     senderId: {
@@ -22,32 +19,17 @@ const messageSchema = new mongoose.Schema(
     text: {
       type: String,
       trim: true,
-      maxlength: [2000, "Message text is too long"],
+      maxlength: 2000,
     },
 
-    image: {
-      type: String,
-      default: "",
-    },
+    image: { type: String, default: "" },
 
-    /* =========================================================
-       AUDIO MESSAGE SUPPORT
-    ========================================================= */
     audio: {
-      url: {
-        type: String,
-        default: "",
-      },
-      duration: {
-        type: Number, // seconds
-      },
+      url: { type: String, default: "" },
+      duration: Number,
     },
 
-    isRead: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
+    isRead: { type: Boolean, default: false, index: true },
 
     messageType: {
       type: String,
@@ -56,65 +38,30 @@ const messageSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* =========================================================
-       EDIT MESSAGE SUPPORT
-    ========================================================= */
-    isEdited: {
-      type: Boolean,
-      default: false,
-    },
+    isEdited: { type: Boolean, default: false },
+    editedAt: Date,
 
-    editedAt: {
-      type: Date,
-    },
+    isDeleted: { type: Boolean, default: false, index: true },
 
-    /* =========================================================
-       DELETE MESSAGE (SOFT DELETE)
-    ========================================================= */
-    isDeleted: {
-      type: Boolean,
-      default: false,
-      index: true,
-    },
-
-    /* =========================================================
-       MESSAGE REACTIONS (userId -> emoji)
-    ========================================================= */
     reactions: {
       type: Map,
       of: String,
       default: {},
     },
   },
-  {
-    timestamps: true,
-    versionKey: false,
-  }
+  { timestamps: true, versionKey: false }
 );
 
-/* =========================================================
-   COMPOUND INDEX (CHAT PERFORMANCE)
-========================================================= */
 messageSchema.index({ senderId: 1, receiverId: 1, createdAt: -1 });
 
-/* =========================================================
-   OUTPUT SANITIZATION
-========================================================= */
 messageSchema.methods.toJSON = function () {
   const obj = this.toObject();
-
-  // Hide content if message is deleted
   if (obj.isDeleted) {
     obj.text = "This message was deleted";
     obj.image = "";
     obj.audio = {};
   }
-
   return obj;
 };
 
-/* =========================================================
-   MODEL EXPORT
-========================================================= */
-const Message = mongoose.model("Message", messageSchema);
-export default Message;
+export default mongoose.model("Message", messageSchema);
